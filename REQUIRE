@@ -17,7 +17,9 @@ PDMats
 ProgressMeter
 Random123
 RecipesBase
+Requires
 StaticArrays
 StatsBase
+Tables
 TypedTables
 UnsafeArrays
