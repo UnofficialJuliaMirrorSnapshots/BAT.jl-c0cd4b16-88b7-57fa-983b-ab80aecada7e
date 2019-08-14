@@ -3,12 +3,11 @@
 using Test
 
 Test.@testset "Package BAT" begin
-    include("Logging/test_Logging.jl")
+    ENV["JULIA_DEBUG"] = "BAT"
 
     include("utils/test_utils.jl")
     include("rngs/test_rngs.jl")
     include("distributions/test_distributions.jl")
-    include("scheduling/test_scheduling.jl")
     include("parameters/test_parameters.jl")
     include("statistics/test_statistics.jl")
     include("densities/test_densities.jl")

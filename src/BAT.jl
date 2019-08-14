@@ -44,22 +44,15 @@ import Random123
 import TypedTables
 
 
-include("Logging/Logging.jl")
-using BAT.Logging
-
-
 include("utils/utils.jl")
 include("rngs/rngs.jl")
 include("distributions/distributions.jl")
-include("scheduling/scheduling.jl")
 include("parameters/parameters.jl")
 include("statistics/statistics.jl")
 include("densities/densities.jl")
 include("samplers/samplers.jl")
 include("integration/integration.jl")
 include("plotting/plotting.jl")
-
-Logging.@enable_logging
 
 
 const _PLOTS_MODULE = Ref{Union{Module,Nothing}}(nothing)

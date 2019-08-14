@@ -132,22 +132,16 @@ struct HistogramLikelihood{H<:Histogram} <: AbstractDensity
     histogram::H
 end
 
-# As a minimum, BAT requires methods of `BAT.nparams` and
-# `BAT.unsafe_density_logval` to be defined for each subtype of
-# `AbstractDensity`.
+# As a minimum, BAT requires methods of `BAT.nparams` and `BAT.density_logval`
+# to be defined for each subtype of `AbstractDensity`.
 #
 # `BAT.nparams` simply needs to return the number of free parameters:
 
 BAT.nparams(likelihood::HistogramLikelihood) = 5
 
-# `BAT.unsafe_density_logval` has to implement the actual log-likelihood
-# function:
+# `BAT.density_logval` has to implement the actual log-likelihood function:
 
-function BAT.unsafe_density_logval(
-    likelihood::HistogramLikelihood,
-    parameters::AbstractVector{<:Real},
-    exec_context::ExecContext
-)
+function BAT.density_logval(likelihood::HistogramLikelihood, parameters::AbstractVector{<:Real})
     ## Histogram counts for each bin as an array:
     counts = likelihood.histogram.weights
 
@@ -173,46 +167,28 @@ function BAT.unsafe_density_logval(
 end
 
 
-# Methods of `BAT.unsafe_density_logval` may be "unsafe" insofar as the
-# implementation is not required to check the length of the `parameters` vector
-# or the validity of the parameter values - BAT takes care of that (assuming
-# that value provided by `BAT.nparams` is correct and that the prior that will
-# only cover valid parameter values).
+# Implementations of `BAT.density_logval` are not required to check the length
+# of the `parameters` vector or the validity of the parameter values - BAT
+# takes care of that before calling `BAT.density_logval` (assuming that
+# the information about the density that `BAT.nparams` and `BAT.param_bounds`
+# provide is correct).
 #
-# Note: Currently, implementations of BAT.unsafe_density_logval *must* be
-# type stable, to avoid triggering a Julia-internal error. The matter is under
-# investigation. If the implementation of `BAT.unsafe_density_logval` is *not*
-# type-stable, this will often result in an error like this:
+# BAT makes use of Julia's parallel programming facilities if possible, e.g.
+# to run multiple Markov chains in parallel, and expects implementations of
+# `BAT.density_logval` to be thread safe. Mark non-thread-safe code with
+# `@critical` (using Julia package `ParallelProcessingTools`).
 #
-# ```
-# Internal error: encountered unexpected error in runtime:
-# MethodError(f=typeof(Core.Compiler.fieldindex)(), args=(Random123.Philox4x{T, R} ...
-# ```
+# BAT requires Julia v1.3 or newer to use multi-threading. Support for
+# automatic parallelization across multiple (local and remote) Julia processes
+# is planned, but not implemented yet.
 #
-# The `exec_context` argument can be ignored in simple use cases, it is only
-# of interest for `unsafe_density_logval` methods that internally use Julia's
-# multi-threading and/or distributed code execution capabilities.
-#
-# BAT itself also makes use of Julia's parallel programming facilities. BAT
-# can calculate log-density values in parallel (e.g. for multiple MCMC chains)
-# on multiple threads (implemented) and support for distributed execution
-# (on multiple hosts) is planned. By default, however, BAT will assume that
-# implementations of `BAT.unsafe_density_logval` are *not* thread safe. If
-# your implementation *is* thread-safe (as is the case in the example above),
-# you can advertise this fact to BAT:
-
-BAT.exec_capabilities(::typeof(BAT.unsafe_density_logval), likelihood::HistogramLikelihood, parameters::AbstractVector{<:Real}) =
-    ExecCapabilities(0, true, 0, true)
-
-# BAT will then use multi-threaded log-likelihood evaluation where possible.
-# Note that Julia starts only a single thread by default, you will need to set
-# the environment variable
+# Note that Julia currently starts only a single thread by default, you will
+# need to set the environment variable
 # [`JULIA_NUM_THREADS`](https://docs.julialang.org/en/v1/manual/environment-variables/#JULIA_NUM_THREADS-1)
-# to configure the number of Julia threads.
+# to specify the number of Julia threads.
 #
-#
-# Given our fit function and the histogram to fit, we'll define the
-# likelihood as
+# Using our likelihood density definition and the histogram to fit, we can now
+# define our data-specific likelihood:
 
 likelihood = HistogramLikelihood(hist)
 
@@ -313,12 +289,11 @@ burnin_strategy = MCMCBurninStrategy(
 
 #md nothing # hide
 
-# Before running the Markov chains, let's set BAT's logging level to debug,
-# to see what's going on in more detail (note: BAT's logging API will change
-# in the future for better integration with the Julia v1 logging facilities):
+# To increase the verbosity level of BAT logging output, you may want to set
+# the Julia logging level for BAT to debug via `ENV["JULIA_DEBUG"] = "BAT"`.
 
-BAT.Logging.set_log_level!(BAT, BAT.Logging.LOG_DEBUG)
-#md nothing # hide
+#nb ENV["JULIA_DEBUG"] = "BAT"
+#jl ENV["JULIA_DEBUG"] = "BAT"
 
 # Now we can generate a set of MCMC samples via `rand`:
 
@@ -332,8 +307,7 @@ samples, sampleids, stats, chains = rand(
     burnin_strategy = burnin_strategy,
     max_nsteps = 10000,
     max_time = Inf,
-    granularity = 1,
-    ll = BAT.Logging.LOG_INFO
+    granularity = 1
 )
 #md nothing # hide
 
