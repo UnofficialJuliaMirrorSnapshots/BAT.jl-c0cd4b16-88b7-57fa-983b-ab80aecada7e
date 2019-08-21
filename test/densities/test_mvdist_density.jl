@@ -7,14 +7,12 @@ using ArraysOfArrays, Distributions, PDMats
 
 @testset "mvdist_density" begin
     mvt = @inferred MvTDist(1.5, PDMat([2.0 1.0; 1.0 3.0]))
-    mvdd = @inferred MvDistDensity(mvt)
+    mvdd = @inferred DistributionDensity(mvt)
 
     @testset "mvdist_density" begin
         @test typeof(mvdd) <: AbstractDensity
         @test parent(mvdd) == mvt
         @test nparams(mvdd) == 2
-
-        @test typeof(sampler(mvdd)) <: BATMvTDistSampler
     end
 
     @testset "density_logval" begin
