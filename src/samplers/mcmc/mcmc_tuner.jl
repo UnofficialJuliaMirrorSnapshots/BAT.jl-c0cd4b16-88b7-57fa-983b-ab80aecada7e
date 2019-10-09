@@ -9,6 +9,7 @@ abstract type AbstractMCMCTuner end
 export AbstractMCMCTuner
 
 
+function isvalid end
 function isviable end
 
 function tuning_init! end
@@ -31,8 +32,13 @@ end
 
 export MCMCBurninStrategy
 
-MCMCBurninStrategy(chainspec::MCMCSpec, nsamples::Integer, tuner_config::AbstractMCMCTunerConfig) =
-    MCMCBurninStrategy()
+function MCMCBurninStrategy(chainspec::MCMCSpec, nsamples::Integer, tuner_config::AbstractMCMCTunerConfig)
+    max_nsamples_per_cycle = max(div(nsamples, 10), 10)
+    MCMCBurninStrategy(
+        max_nsamples_per_cycle = max_nsamples_per_cycle,
+        max_nsteps_per_cycle = 10 * max_nsamples_per_cycle
+    )
+end
 
 
 function mcmc_tune_burnin!(
@@ -52,6 +58,11 @@ function mcmc_tune_burnin!(
     cycles = zero(Int)
     successful = false
     while !successful && cycles < burnin_strategy.max_ncycles
+        stats = [x.stats for x in tuners] # ToDo: Find more generic abstraction
+
+        # Clear all stats before tuning cycle
+        empty!.(stats)
+
         cycles += 1
         run_tuning_cycle!(
             user_callbacks, tuners, chains;
@@ -60,7 +71,6 @@ function mcmc_tune_burnin!(
             max_time = burnin_strategy.max_time_per_cycle
         )
 
-        stats = [x.stats for x in tuners] # ToDo: Find more generic abstraction
         ct_result = check_convergence!(convergence_test, chains, stats)
 
         ntuned = count(c -> c.info.tuned, chains)
@@ -100,6 +110,8 @@ struct NoOpTuner{C<:MCMCIterator} <: AbstractMCMCTuner end
 
 export NoOpTuner
 
+
+isvalid(chain::MCMCIterator) = current_sample(chain).log_posterior > -Inf
 
 isviable(tuner::NoOpTuner, chain::MCMCIterator) = true
 
@@ -164,6 +176,9 @@ function mcmc_init(
         @debug "Generating $n $(cycle > 1 ? "additional " : "")MCMC chain(s)."
 
         new_chains = _gen_chains(ncandidates .+ (one(Int64):n), chainspec)
+
+        filter!(isvalid, new_chains)
+
         new_tuners = tuner_config.(new_chains)
         tuning_init!.(new_tuners, new_chains)
         ncandidates += n
