@@ -53,7 +53,6 @@ end
 
 
 function tuning_update!(tuner::ProposalCovTuner, chain::MHIterator)
-    stats = tuner.stats
     config = tuner.config
 
     α_min = minimum(config.α)
@@ -69,7 +68,7 @@ function tuning_update!(tuner::ProposalCovTuner, chain::MHIterator)
     c = tuner.scale
     Σ_old = Matrix(get_cov(chain.proposaldist))
 
-    S = convert(Array, stats.param_stats.cov)
+    S = convert(Array, tuner.stats.param_stats.cov)
     a_t = 1 / t^λ
     new_Σ_unscal = (1 - a_t) * (Σ_old/c) + a_t * S
 
@@ -89,15 +88,8 @@ function tuning_update!(tuner::ProposalCovTuner, chain::MHIterator)
         end
     end
 
-    Σ_new = Matrix(Hermitian(new_Σ_unscal * tuner.scale))
-
-    if !isposdef(Σ_new)
-        ev = convert(Vector{eltype(Σ_new)}, eigen(Σ_new).values) # require real-valued eigenvalues
-        ev_min = minimum(ev)
-        Σ_11 = Σ_new[1,1]
-        Σ_new += max(10 * eps(typeof(ev_min)), -ev_min) * Matrix{eltype(ev)}(I, length(ev), length(ev))
-        Σ_new ./= (Σ_new[1,1] / Σ_11)
-    end
+    Σ_new_raw = new_Σ_unscal * tuner.scale
+    Σ_new = Matrix(cholesky(Positive, Hermitian(Σ_new_raw)))
 
     next_cycle!(chain)
     chain.proposaldist = set_cov(chain.proposaldist, Σ_new)
