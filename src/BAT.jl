@@ -22,7 +22,6 @@ using Colors
 using Distributions
 using DoubleFloats
 using ElasticArrays
-using FunctionWrappers
 using IntervalSets
 using PDMats
 using ParallelProcessingTools
@@ -32,10 +31,10 @@ using ProgressMeter
 using RecipesBase
 using Requires
 using ValueShapes
-using StaticArrays
 using StatsBase
 using Tables
 using UnsafeArrays
+using KernelDensity
 
 #for AHMI
 using DataStructures
