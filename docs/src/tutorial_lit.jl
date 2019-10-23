@@ -216,15 +216,15 @@ prior = NamedPrior(
 #
 # The prior also implies the shapes of the parameters:
 
-using ShapesOfVariables
+using ValueShapes
 
-parshapes = VarShapes(prior)
+parshapes = valshape(prior)
 
 # These will come in handy later on, e.g. to access (the posterior
 # distribution of) individual parameter values.
 
 
-### Bayesian Model Definition
+# ### Bayesian Model Definition
 #
 # Given the likelihood and prior definition, a `BAT.PosteriorDensity` is simply
 # defined via
@@ -233,7 +233,7 @@ posterior = PosteriorDensity(likelihood, prior)
 #md nothing # hide
 
 
-### Parameter Space Exploration via MCMC
+# ### Parameter Space Exploration via MCMC
 #
 # We can now use Markov chain Monte Carlo (MCMC) to explore the space of
 # possible parameter values for the histogram fit.
@@ -415,7 +415,7 @@ tbl = Table(samples, sampleids)
 # Using the parameter shapes, we can also generate a table with named
 # parameters instead:
 
-tbl_named = Table(parshapes(samples), sampleids)
+tbl_named = Table(parshapes.(samples), sampleids)
 
 
 # We can now, e.g., find the sample with the maximum posterior value (i.e. the
