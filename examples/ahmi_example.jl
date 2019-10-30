@@ -21,7 +21,7 @@ function BAT.density_logval(target::GaussianShellDensity, params::AbstractArray{
 end
 
 algorithm = MetropolisHastings()
-#algorithm = MetropolisHastings(MHAccRejProbWeights{Float64}())
+#algorithm = MetropolisHastings(ARPWeights{Float64}())
 
 #define model and #dimensions
 dim = 2
@@ -32,12 +32,6 @@ lo_bounds = [-30.0 for i = 1:dim]
 hi_bounds = [ 30.0 for i = 1:dim]
 bounds = HyperRectBounds(lo_bounds, hi_bounds, reflective_bounds)
 
-chainspec = MCMCSpec(algorithm, model, bounds)
-chains = 8
-nsamples = 10^5
-
-#define function to generate samples
-sample() = rand(chainspec, nsamples, chains)
 
 
 #Harmonic Mean Integration
@@ -46,9 +40,9 @@ sample() = rand(chainspec, nsamples, chains)
 
 
 #BAT.jl samples
-bat_samples = sample()
-data = HMIData(bat_samples)
-hm_integrate!(data)
+bat_samples = bat_sample(PosteriorDensity(model, bounds), (10^5, 8), algorithm).samples
+data = BAT.HMIData(bat_samples)
+BAT.hm_integrate!(data)
 
 using Plots; pyplot()
 plot(data, rscale = 0.25)
