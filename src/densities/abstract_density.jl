@@ -31,8 +31,7 @@ export AbstractDensity
 
 
 @doc """
-    density_logval(density::AbstractDensity, params::AbstractVector{<:Real})
-    density_logval(density::AbstractDensity, params::NamedTuple)
+    density_logval(density::AbstractDensity, params::Any)
 
 Compute log of value of a multi-variate density function at the given
 parameter values.
@@ -41,9 +40,6 @@ Input:
 
 * `density`: density function
 * `params`: parameter values
-
-Subtypes of `AbstractDensity` must implement `density_logval` for either
-`params::AbstractVector{<:Real}` or `params::NamedTuple`.
 
 Note: If `density_logval` is called with out-of-bounds parameters (see
 `param_bounds`), the behaviour is undefined. The result for parameters that
@@ -82,11 +78,15 @@ end
 @doc """
     params_shape(
         density::AbstractDensity
-    )::Union{ValueShapes.AbstractValueShape,Missing}       #!!! FORMER ::Union{ValueShapes.AbstractValueShape,Missing,Nothing}
+    )::Union{ValueShapes.AbstractValueShape,Missing}
 
     params_shape(
-        density::AbstractPriorDensity
-    )::ValueShapes.AbstractValueShape      #!!! FORMER ::Union{ValueShapes,Nothing}
+        density::DistLikeDensity
+    )::ValueShapes.AbstractValueShape
+
+    params_shape(
+        distribution::Distributions.Distribution
+    )::ValueShapes.AbstractValueShape
 
 Get the shapes of parameters of `density`.
 
@@ -98,12 +98,14 @@ export params_shape
 
 params_shape(density::AbstractDensity) = missing
 
+params_shape(dist::Distribution) = valshape(dist)
+
 
 @doc """
     eval_density_logval(
         density::AbstractDensity,
         params::AbstractVector{<:Real},
-        parshapes::ValueShapes.AbstractValueShape   #!!! FORMER Union{ValueShapes.AbstractValueShape,Nothing}
+        parshapes::ValueShapes.AbstractValueShape
     )
 
 Internal function to evaluate density log-value, calls `density_logval`.
@@ -120,7 +122,7 @@ Checks that:
 function eval_density_logval(
     density::AbstractDensity,
     params::AbstractVector{<:Real},
-    parshapes::ValueShapes.AbstractValueShape              #! FORMER Union{ValueShapes.AbstractValueShape,Nothing}
+    parshapes::ValueShapes.AbstractValueShape
 )
     npars = nparams(density)
     ismissing(npars) || (length(eachindex(params)) == npars) || throw(ArgumentError("Invalid length of parameter vector"))
@@ -132,17 +134,16 @@ function eval_density_logval(
     r
 end
 
-# !!!! FORMER _apply_parshapes(params::AbstractVector{<:Real}, parshapes::Nothing) = params
-
 _apply_parshapes(params::AbstractVector{<:Real}, parshapes::AbstractValueShape) = parshapes(params)
 
 
 @doc """
-    AbstractPriorDensity <: AbstractDensity
+    DistLikeDensity <: AbstractDensity
 
-A density suitable for use as a prior.
+A density that implements part of the `Distributions.Distribution` interface.
+Such densities are suitable to be used as a priors.
 
-Subtypes of `AbstractPriorDensity` are required to support more functionality
+Subtypes of `DistLikeDensity` are required to support more functionality
 than a `AbstractDensity`, but less than a
 `Distribution{Multivariate,Continuous}`.
 
@@ -163,14 +164,14 @@ Prior densities that support named parameters should also implement
 * `BAT.params_shape`
 
 A `d::Distribution{Multivariate,Continuous}` can be converted into (wrapped
-in) an `AbstractPriorDensity` via `conv(AbstractPriorDensity, d)`.
+in) an `DistLikeDensity` via `conv(DistLikeDensity, d)`.
 """
-abstract type AbstractPriorDensity <: AbstractDensity end
-export AbstractPriorDensity
+abstract type DistLikeDensity <: AbstractDensity end
+export DistLikeDensity
 
 
 @doc """
-    param_bounds(density::AbstractPriorDensity)::AbstractParamBounds
+    param_bounds(density::DistLikeDensity)::AbstractParamBounds
 
 Get the parameter bounds of `density`. Must not be `missing`.
 """
@@ -178,10 +179,10 @@ function param_bounds end
 
 
 @doc """
-    nparams(density::AbstractPriorDensity)::Int
+    nparams(density::DistLikeDensity)::Int
 
 Get the number of parameters of prior density `density`. Must not be
 `missing`, prior densities must have a fixed number of parameters. By default,
 the number of parameters is inferred from the parameter bounds.
 """
-nparams(density::AbstractPriorDensity) = nparams(param_bounds(density))
+nparams(density::DistLikeDensity) = nparams(param_bounds(density))

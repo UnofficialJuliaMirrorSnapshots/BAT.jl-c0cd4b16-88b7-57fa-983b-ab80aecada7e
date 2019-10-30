@@ -1,7 +1,13 @@
 # This file is a part of BAT.jl, licensed under the MIT License (MIT).
 
 
+"""
+    abstract type AbstractPosteriorDensity <: AbstractDensity end
+
+Abstract super-type for posterior probability densities.
+"""
 abstract type AbstractPosteriorDensity <: AbstractDensity end
+export AbstractPosteriorDensity
 
 
 doc"""
@@ -135,8 +141,7 @@ function density_logval(density::AbstractPosteriorDensity, params::AbstractVecto
     eval_density_logval(getlikelihood(density), params, parshapes)
 end
 
-
-function density_logval(density::AbstractPosteriorDensity, params::NamedTuple)
+function density_logval(density::AbstractPosteriorDensity, params::Any)
     density_logval(getprior(density), params) +
     density_logval(getlikelihood(density), params)
 end
@@ -163,10 +168,9 @@ end
 
 
 doc"""
-
     PosteriorDensity{
         Li<:AbstractDensity,
-        Pr<:AbstractPriorDensity
+        Pr<:DistLikeDensity
     } <: AbstractPosteriorDensity
 
 A representation of a PosteriorDensity, based a likelihood and prior, a
@@ -188,9 +192,9 @@ PosteriorDensity(log_likelihood::Function, prior::Any)
 """
 struct PosteriorDensity{
     L<:AbstractDensity,
-    P<:AbstractPriorDensity,
+    P<:DistLikeDensity,
     B<:AbstractParamBounds,
-    S<:AbstractValueShape       # !!!! FORMER S<:Union{VarShapes,Nothing}
+    S<:AbstractValueShape
 } <: AbstractPosteriorDensity
     likelihood::L
     prior::P

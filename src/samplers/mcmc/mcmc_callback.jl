@@ -107,13 +107,7 @@ function (cb::MCMCAppendCallback)(level::Integer, subject::Any)
 end
 
 
-Base.convert(::Type{AbstractMCMCCallback}, x::DensitySampleVector) = MCMCAppendCallback(x)
+Base.convert(::Type{AbstractMCMCCallback}, x::PosteriorSampleVector) = MCMCAppendCallback(x)
 
-MCMCAppendCallback(x::DensitySampleVector, nonzero_weights::Bool = true) =
+MCMCAppendCallback(x::PosteriorSampleVector, nonzero_weights::Bool = true) =
     MCMCAppendCallback(x, 1, get_samples!, nonzero_weights)
-
-
-Base.convert(::Type{AbstractMCMCCallback}, x::MCMCSampleIDVector) = MCMCAppendCallback(x)
-
-MCMCAppendCallback(x::MCMCSampleIDVector, nonzero_weights::Bool = true) =
-    MCMCAppendCallback(x, 1, get_sample_ids!, nonzero_weights)

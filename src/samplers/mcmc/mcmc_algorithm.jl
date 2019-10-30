@@ -2,7 +2,9 @@
 
 
 doc"""
-    abstract type MCMCAlgorithm end
+    abstract type MCMCAlgorithm <: AbstractSamplingAlgorithm end
+
+BAT-internal documentation, not part of stable API:
 
 The following methods must be defined for subtypes (e.g.
 for `SomeAlgorithm<:MCMCAlgorithm`):
@@ -26,7 +28,7 @@ BAT.initial_params!(
 To implement a new MCMC algorithm, subtypes of both `MCMCAlgorithm` and
 [`MCMCIterator`](@ref) are required.
 """
-abstract type MCMCAlgorithm end
+abstract type MCMCAlgorithm <: AbstractSamplingAlgorithm end
 export MCMCAlgorithm
 
 
@@ -140,15 +142,13 @@ BAT.nsteps(chain::SomeMCMCIter)::Int
 
 BAT.nsamples(chain::SomeMCMCIter)::Int
 
-BAT.current_sample(chain::SomeMCMCIter)::DensitySample
+BAT.current_sample(chain::SomeMCMCIter)::PosteriorSample
 
-BAT.sample_type(chain::SomeMCMCIter)::Type{<:DensitySample}
+BAT.sample_type(chain::SomeMCMCIter)::Type{<:PosteriorSample}
 
 BAT.samples_available(chain::SomeMCMCIter, nonzero_weights::Bool = false)::Bool
 
 BAT.get_samples!(appendable, chain::SomeMCMCIter, nonzero_weights::Bool)::typeof(appendable)
-
-BAT.get_sample_ids!(appendable, chain::SomeMCMCIter, nonzero_weights::Bool)::typeof(appendable)
 
 BAT.next_cycle!(chain::SomeMCMCIter)::SomeMCMCIter
 
@@ -165,8 +165,7 @@ algorithm(chain::MCMCIterator)
 getposterior(chain::MCMCIterator)
 rngseed(chain::MCMCIterator)
 nparams(chain::MCMCIterator)
-DensitySampleVector(chain::MCMCIterator)
-MCMCSampleIDVector(chain::MCMCIterator)
+PosteriorSampleVector(chain::MCMCIterator)
 mcmc_iterate!(callback, chain::MCMCIterator, ...)
 mcmc_iterate!(callbacks, chains::AbstractVector{<:MCMCIterator}, ...)
 ```
@@ -193,8 +192,6 @@ function samples_available end
 
 function get_samples! end
 
-function get_sample_ids! end
-
 function next_cycle! end
 
 function mcmc_step! end
@@ -208,9 +205,7 @@ rngseed(chain::MCMCIterator) = mcmc_spec(chain).rngseed
 
 nparams(chain::MCMCIterator) = nparams(getposterior(chain))
 
-DensitySampleVector(chain::MCMCIterator) = DensitySampleVector(sample_type(chain), nparams(chain))
-
-MCMCSampleIDVector(chain::MCMCIterator) = MCMCSampleIDVector()
+PosteriorSampleVector(chain::MCMCIterator) = PosteriorSampleVector(sample_type(chain), nparams(chain))
 
 
 

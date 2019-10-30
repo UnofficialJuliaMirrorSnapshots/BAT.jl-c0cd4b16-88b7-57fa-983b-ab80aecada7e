@@ -5,164 +5,171 @@ abstract type AbstractDensitySample end
 export AbstractDensitySample
 
 
-struct DensitySample{
+struct PosteriorSample{
     P<:Real,
     T<:Real,
     W<:Real,
+    R,
     PA<:AbstractVector{P}
 } <: AbstractDensitySample
     params::PA
     log_posterior::T
     log_prior::T
     weight::W
+    info::R
 end
 
-export DensitySample
+export PosteriorSample
+
+
+# PosteriorSample behaves as a scalar type under broadcasting:
+@inline Base.Broadcast.broadcastable(shape::PosteriorSample) = Ref(shape)
 
 
 import Base.==
-function ==(A::DensitySample, B::DensitySample)
+function ==(A::PosteriorSample, B::PosteriorSample)
     A.params == B.params && A.log_posterior == B.log_posterior &&
-        A.log_prior == B.log_prior && A.weight == B.weight
+        A.log_prior == B.log_prior && A.weight == B.weight &&
+        A.info == B.info
 end
 
 
-# ToDo: remove?
-Base.length(s::DensitySample) = length(s.params)
-
-
-function Base.similar(s::DensitySample{P,T,W}) where {P,T,W}
+function Base.similar(s::PosteriorSample{P,T,W,R}) where {P,T,W,R}
     params = fill!(similar(s.params), oob(eltype(s.params)))
     log_posterior = convert(T, NaN)
     log_prior = convert(T, NaN)
     weight = zero(W)
+    info = R()
     PA = typeof(params)
-    DensitySample{P,T,W,PA}(params, log_posterior, log_prior, weight)
+    PosteriorSample{P,T,W,R,PA}(params, log_posterior, log_prior, weight, info)
 end
 
 
-nparams(s::DensitySample) = length(s)
-
-(shape::AbstractValueShape)(s::DensitySample) = (
-    params = shape(s.params),
-    log_posterior = s.log_posterior,
-    log_prior = s.log_prior,
-    weight = s.weight,
-)
+nparams(s::PosteriorSample) = length(s.params)
 
 
-
-struct DensitySampleVector{
-    P<:Real,T<:AbstractFloat,W<:Real,
-    PA<:VectorOfSimilarVectors{P},TA<:AbstractVector{T},WA<:AbstractVector{W}
-} <: BATDataVector{DensitySample{P,T,W,Vector{P}}}
-    params::PA
-    log_posterior::TA
-    log_prior::TA
-    weight::WA
-end
-
-export DensitySampleVector
-
-
-function DensitySampleVector{P,T,W}(nparams::Integer) where {P<:Real,T<:AbstractFloat,W<:Real}
-    DensitySampleVector(
-        VectorOfSimilarVectors(ElasticArray{P}(undef, nparams, 0)),
-        Vector{T}(undef, 0),
-        Vector{T}(undef, 0),
-        Vector{W}(undef, 0)
+function _apply_shape(shape::AbstractValueShape, s::PosteriorSample)
+    (
+        params = shape(s.params),
+        log_posterior = s.log_posterior,
+        log_prior = s.log_prior,
+        weight = s.weight,
+        info = s.info
     )
 end
 
-DensitySampleVector(::Type{S}, nparams::Integer) where {P<:Real,T<:AbstractFloat,W<:Real,S<:DensitySample{P,T,W}} =
-    DensitySampleVector{P,T,W}(nparams)
-
-
-Base.size(xs::DensitySampleVector) = size(xs.params)
-
-Base.getindex(xs::DensitySampleVector, i::Integer) =
-    DensitySample(xs.params[i], xs.log_posterior[i], xs.log_prior[i], xs.weight[i])
-
-Base.@propagate_inbounds Base._getindex(l::IndexStyle, xs::DensitySampleVector, idxs::AbstractVector{<:Integer}) =
-    DensitySampleVector(xs.params[:, idxs], xs.log_posterior[idxs], xs.log_prior[idxs], xs.weight[idxs])
-
-Base.IndexStyle(xs::DensitySampleVector) = IndexStyle(xs.params)
-
-
-function Base.push!(xs::DensitySampleVector, x::DensitySample)
-    push!(xs.params, x.params)
-    push!(xs.log_posterior, x.log_posterior)
-    push!(xs.log_prior, x.log_prior)
-    push!(xs.weight, x.weight)
-    xs
+@static if VERSION >= v"1.3"
+    (shape::AbstractValueShape)(s::PosteriorSample) = _apply_shape(shape, s)
+else
+    (shape::ScalarShape)(s::PosteriorSample) = _apply_shape(shape, s)
+    (shape::ArrayShape)(s::PosteriorSample) = _apply_shape(shape, s)
+    (shape::ConstValueShape)(s::PosteriorSample) = _apply_shape(shape, s)
+    (shape::NamedTupleShape)(s::PosteriorSample) = _apply_shape(shape, s)
 end
 
 
-function Base.append!(A::DensitySampleVector, B::DensitySampleVector)
-    append!(A.params, B.params)
-    append!(A.log_posterior, B.log_posterior)
-    append!(A.log_prior, B.log_prior)
-    append!(A.weight, B.weight)
-    A
+
+"""
+    PosteriorSampleVector
+
+Type alias for `StructArrays.StructArray{<:PosteriorSample,...}`.
+"""
+const PosteriorSampleVector{
+    P<:Real,T<:AbstractFloat,W<:Real,R,PA<:AbstractVector{P},
+    PAV<:AbstractVector{<:AbstractVector{P}},TV<:AbstractVector{T},WV<:AbstractVector{W},RV<:AbstractVector{R}
+} = StructArray{
+    PosteriorSample{P,T,W,R,PA},
+    1,
+    NamedTuple{(:params, :log_posterior, :log_prior, :weight, :info), Tuple{PAV,TV,TV,WV,RV}}
+}
+
+export PosteriorSampleVector
+
+
+function StructArray{PosteriorSample}(
+    contents::Tuple{
+        AbstractVector{<:AbstractVector{P}},
+        AbstractVector{T},
+        AbstractVector{T},
+        AbstractVector{W},
+        AbstractVector{R}
+    }
+) where {P<:Real,T<:AbstractFloat,W<:Real,R}
+    params, log_posterior, log_prior, weight, info = contents
+    PA = eltype(params)
+    StructArray{PosteriorSample{P,T,W,R,PA}}(contents)
 end
 
 
-function Base.resize!(A::DensitySampleVector, n::Integer)
-    resize!(A.params, n)
-    resize!(A.log_posterior, n)
-    resize!(A.log_prior, n)
-    resize!(A.weight, n)
-    A
-end
+PosteriorSampleVector(contents::NTuple{5,Any}) = StructArray{PosteriorSample}(contents)
 
 
-Base.@propagate_inbounds function Base.unsafe_view(A::DensitySampleVector, idxs)
-    DensitySampleVector(
-        view(A.params, idxs),
-        view(A.log_posterior, idxs),
-        view(A.log_prior, idxs),
-        view(A.weight, idxs)
+_create_undef_vector(::Type{T}, len::Integer) where T = Vector{T}(undef, len)
+
+
+function PosteriorSampleVector{P,T,W,R}(::UndefInitializer, len::Integer, npar::Integer) where {P<:Real,T<:AbstractFloat,W<:Real,R}
+    contents = (
+        VectorOfSimilarVectors(ElasticArray{P}(undef, npar, len)),
+        Vector{T}(undef, len),
+        Vector{T}(undef, len),
+        Vector{W}(undef, len),
+        _create_undef_vector(R, len)
     )
+
+    PosteriorSampleVector(contents)
+end
+
+PosteriorSampleVector(::Type{S}, nparams::Integer) where {P<:Real,T<:AbstractFloat,W<:Real,R,S<:PosteriorSample{P,T,W,R}} =
+    PosteriorSampleVector{P,T,W,R}(undef, 0, nparams)
+
+
+# Specialize getindex to properly support ArraysOfArrays, preventing
+# conversion to exact element type:
+@inline Base.getindex(A::StructArray{<:PosteriorSample}, I::Int...) =
+    PosteriorSample(A.params[I...], A.log_posterior[I...], A.log_prior[I...], A.weight[I...], A.info[I...])
+
+# Specialize IndexStyle, current default for StructArray seems to be IndexCartesian()
+Base.IndexStyle(::StructArray{<:PosteriorSample, 1}) = IndexLinear()
+
+# Specialize comparison, currently StructArray seems fall back to `(==)(A::AbstractArray, B::AbstractArray)`
+import Base.==
+function(==)(A::PosteriorSampleVector, B::PosteriorSampleVector)
+    A.params == B.params &&
+    A.log_posterior == B.log_posterior &&
+    A.log_prior == B.log_prior &&
+    A.weight == B.weight &&
+    A.info == B.info
 end
 
 
-function UnsafeArrays.uview(A::DensitySampleVector)
-    DensitySampleVector(
+function Base.merge!(X::PosteriorSampleVector, Xs::PosteriorSampleVector...)
+    for Y in Xs
+        append!(X, Y)
+    end
+    X
+end
+
+Base.merge(X::PosteriorSampleVector, Xs::PosteriorSampleVector...) = merge!(deepcopy(X), Xs...)
+
+
+function UnsafeArrays.uview(A::PosteriorSampleVector)
+    PosteriorSampleVector((
         uview(A.params),
         uview(A.log_posterior),
         uview(A.log_prior),
-        uview(A.weight)
-    )
+        uview(A.weight),
+        uview(A.info)
+    ))
 end
 
 
-Tables.istable(::Type{<:DensitySampleVector}) = true
-
-Tables.columnaccess(::Type{<:DensitySampleVector}) = true
-
-Tables.columns(A::DensitySampleVector) = (
-    params = A.params,
-    log_posterior = A.log_posterior,
-    log_prior = A.log_prior,
-    weight = A.weight
-)
-
-Tables.rowaccess(::Type{<:DensitySampleVector}) = true
-
-Tables.rows(A::DensitySampleVector) = A
-
-Tables.schema(A::DensitySampleVector) = Tables.Schema(
-    (:params, :log_posterior, :log_prior, :weight),
-    (eltype(A.params), eltype(A.log_posterior), eltype(A.log_prior), eltype(A.weight))
-)
-
-
-Base.@propagate_inbounds function _bcasted_apply(shape::AbstractValueShape, A::DensitySampleVector)
+Base.@propagate_inbounds function _bcasted_apply(shape::AbstractValueShape, A::PosteriorSampleVector)
     TypedTables.Table(
         params = shape.(A.params),
         log_posterior = A.log_posterior,
         log_prior = A.log_prior,
-        weight = A.weight
+        weight = A.weight,
+        info = A.info
     )
 end
 
@@ -171,35 +178,56 @@ Base.copy(
         <:Base.Broadcast.AbstractArrayStyle{1},
         <:Any,
         <:AbstractValueShape,
-        <:Tuple{DensitySampleVector}
+        <:Tuple{PosteriorSampleVector}
     }
 ) = _bcasted_apply(instance.f, instance.args[1])    
 
 
+"""
+    bat_stats(samples::PosteriorSampleVector)
 
-function _swap!(A::DensitySampleVector, i_A::SingleArrayIndex, B::DensitySampleVector, i_B::SingleArrayIndex)
-    _swap!(view(flatview(A.params), :, i_A), view(flatview(A.params), :, i_B))  # Memory allocation!
-    _swap!(A.log_posterior, i_A, B.log_posterior, i_B)
-    _swap!(A.log_prior, i_A, B.log_prior, i_B)
-    _swap!(A.weight, i_A, B.weight, i_B)
-    A
-end
+Calculated parameter statistics on `samples`. Returns a
+`NamedTuple{(:mode,:mean,:cov,...)}`. Result properties not listed here
+are not part of the stable BAT API and subject to change.
+"""
+function bat_stats(samples::PosteriorSampleVector)
+    par_mean = mean(samples.params, FrequencyWeights(samples.weight))
+    par_mode_idx = findmax(samples.log_posterior)[2]
+    par_mode = samples.params[par_mode_idx]
+    par_cov = cov(samples.params, FrequencyWeights(samples.weight))
 
-
-function read_fom_hdf5(input, ::Type{DensitySampleVector})
-    DensitySampleVector(
-        VectorOfSimilarVectors(input["params"][:,:]),
-        input["log_posterior"][:],
-        input["log_prior"][:],
-        input["weight"][:]
+    (
+        mode = par_mode,
+        mean = par_mean,
+        cov = par_cov
     )
 end
 
+export bat_stats
 
-function write_to_hdf5(output, samples::DensitySampleVector)
-    output["params"] = Array(flatview(samples.params))
-    output["log_posterior"] = samples.log_posterior
-    output["log_prior"] = samples.log_posterior
-    output["weight"] = samples.weight
-    nothing
+
+"""
+    drop_low_weight_samples(
+        samples::PosteriorSampleVector,
+        fraction::Real = 10^-4
+    )
+
+Drop `fraction` of the total probability mass from samples to filter out the
+samples with the lowest weight.
+
+Note: BAT-internal function, not part of stable API.
+"""
+function drop_low_weight_samples(samples::PosteriorSampleVector, fraction::Real = 10^-5)
+    W = float(samples.weight)
+    if minimum(W) / maximum(W) > 10^-2
+        samples
+    else
+        W_s = sort(W)
+        Q = cumsum(W_s)
+        Q ./= maximum(Q)
+        @assert last(Q) ≈ 1
+        thresh = W_s[searchsortedlast(Q, fraction)]
+        idxs = findall(x -> x >= thresh, samples.weight)
+        samples[idxs]
+    end
 end

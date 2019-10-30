@@ -75,19 +75,13 @@ plot(
 #md # [![Data](tutorial-data.svg)](tutorial-data.pdf)
 
 
-# The package ["EponymTuples"](https://github.com/tpapp/EponymTuples.jl)
-# provides a very useful macro `@eponymargs`: It makes it easy to define
-# functions that take named tuples as arguments and unpack them.
+# Let's define our fit function - the function that we expect to describe the
+# data histogram, at each x-Axis position `x`, depending on a given set `p` of
+# model parameters:
 
-using EponymTuples
-
-# This comes in handy for the definition of ou fit function - the function
-# that we expect to describes the data histogram (depending on some model
-# parameters):
-
-function fit_function(@eponymargs(a, mu, sigma), x::Real)
-    a[1] * pdf(Normal(mu[1], sigma), x) +
-    a[2] * pdf(Normal(mu[2], sigma), x)
+function fit_function(p::NamedTuple{(:a, :mu, :sigma)}, x::Real)
+    p.a[1] * pdf(Normal(p.mu[1], p.sigma), x) +
+    p.a[2] * pdf(Normal(p.mu[2], p.sigma), x)
 end
 #md nothing # hide
 
@@ -95,12 +89,13 @@ end
 # are vectors, parameter `sigma` (peak width) is a scalar, we assume it's the
 # same for both Gaussian peaks.
 #
-# The true values for the model/fit parameters are:
+# The true values for the model/fit parameters are the values we used to
+# generate the data:
 
 true_par_values = (a = [500, 1000], mu = (-1.0, 2.0), sigma = 0.5)
 #md nothing # hide
 
-# Let's visually compare the histogram and the fit function, using the true
+# Let's visually compare the histogram and the fit function, using these true
 # parameter values, to make sure everything is set up correctly:
 
 plot(
@@ -131,76 +126,78 @@ using BAT, IntervalSets
 
 # ### Likelihood Definition
 #
-# First, we need to define a likelihood function for our problem. In BAT,
-# all likelihood functions and priors are subtypes of `BAT.AbstractDensity`. 
-# We'll store the histogram that we want to fit in our likelihood density
-# type, as accessing the histogram as a global variable would
-# [reduce performance](https://docs.julialang.org/en/v1/manual/performance-tips/index.html#Avoid-global-variables-1):
-
-struct HistogramLikelihood{H<:Histogram,F<:Function} <: AbstractDensity
-    histogram::H
-    fitfunc::F
-end
-
-# As a minimum, BAT requires a method `BAT.density_logval`
-# to be defined for each subtype of `AbstractDensity`.
+# First, we need to define the likelihood (function) for our problem.
 #
-# `BAT.density_logval` implements the actual log-likelihood function:
+# BAT represents densities like likelihoods and priors as subtypes of
+# `BAT.AbstractDensity`. Custom likelihood can be defined by
+# creating a new subtype of `AbstractDensity` and by implementing (at minimum)
+# `BAT.density_logval` for that type - in complex uses cases, this may become
+# necessary. Typically, however, it is sufficient to define a custom
+# likelihood as a simple function that returns the log-likelihood value for
+# a given set of parameters. BAT will automatically convert such a
+# log-likelihood function into a subtype of `AbstractDensity`.
+#
+# For performance reasons, functions should [not access global variables
+# directly] (https://docs.julialang.org/en/v1/manual/performance-tips/index.html#Avoid-global-variables-1).
+# So we'll use an [anonymous function](https://docs.julialang.org/en/v1/manual/functions/#man-anonymous-functions-1)
+# inside of a [let-statement](https://docs.julialang.org/en/v1/base/base/#let)
+# to capture the value of the global variable `hist` in a local variable `h`
+# (and to shorten function name `fit_function` to `f`, purely for
+# convenience):
 
-function BAT.density_logval(
-    likelihood::HistogramLikelihood,
-    params::Union{NamedTuple,AbstractVector{<:Real}}
-)
-    ## Histogram counts for each bin as an array:
-    counts = likelihood.histogram.weights
+log_likelihood = let h = hist, f = fit_function
+    params -> begin
+        ## Histogram counts for each bin as an array:
+        counts = h.weights
 
-    ## Histogram binning, has length (length(counts) + 1):
-    binning = likelihood.histogram.edges[1]
+        ## Histogram binning, has length (length(counts) + 1):
+        binning = h.edges[1]
 
-    ## sum log-likelihood over bins:
-    log_likelihood::Float64 = 0.0
-    for i in eachindex(counts)
-        bin_left, bin_right = binning[i], binning[i+1]
-        bin_width = bin_right - bin_left
-        bin_center = (bin_right + bin_left) / 2
+        ## sum log-likelihood value over bins:
+        ll_value::Float64 = 0.0
+        for i in eachindex(counts)
+            ## Get information about current bin:
+            bin_left, bin_right = binning[i], binning[i+1]
+            bin_width = bin_right - bin_left
+            bin_center = (bin_right + bin_left) / 2
 
-        observed_counts = counts[i]
+            observed_counts = counts[i]
 
-        ## Simple mid-point rule integration of fitfunc over bin:
-        expected_counts = bin_width * likelihood.fitfunc(params, bin_center)
+            ## Simple mid-point rule integration of fit function `f` over bin:
+            expected_counts = bin_width * f(params, bin_center)
 
-        log_likelihood += logpdf(Poisson(expected_counts), observed_counts)
+            ## Add log of Poisson probability for bin:
+            ll_value += logpdf(Poisson(expected_counts), observed_counts)
+        end
+
+        return ll_value
     end
-
-    return log_likelihood
 end
-
 
 # BAT makes use of Julia's parallel programming facilities if possible, e.g.
-# to run multiple Markov chains in parallel, and expects implementations of
-# `BAT.density_logval` to be thread safe. Mark non-thread-safe code with
-# `@critical` (using Julia package `ParallelProcessingTools`).
+# to run multiple Markov chains in parallel. Therefore, log-likelihood
+# (and other) code must be thread-safe. Mark non-thread-safe code with
+# `@critical` (provided by Julia package `ParallelProcessingTools`).
 #
 # BAT requires Julia v1.3 or newer to use multi-threading. Support for
 # automatic parallelization across multiple (local and remote) Julia processes
 # is planned, but not implemented yet.
 #
-# Note that Julia currently starts only a single thread by default, you will
-# need to set the environment variable
+# Note that Julia currently starts only a single thread by default. Set the
+# the environment variable
 # [`JULIA_NUM_THREADS`](https://docs.julialang.org/en/v1/manual/environment-variables/#JULIA_NUM_THREADS-1)
-# to specify the number of Julia threads.
-#
-# Using our likelihood density definition and the histogram to fit, we can now
-# create our data- and fit-function-specific likelihood instance:
+# to specify the desired number of Julia threads.
 
-likelihood = HistogramLikelihood(hist, fit_function)
+# We can evaluate `log_likelihood`, e.g. for the true parameter values:
+
+log_likelihood(true_par_values)
 
 
 # ### Prior Definition
 #
 # Next, we need to choose a sensible prior for the fit:
 
-prior = NamedPrior(
+prior = NamedTupleDist(
     a = [0.0..10.0^4, 0.0..10.0^4],
     mu = [-2.0..0.0, 1.0..3.0],
     sigma = Truncated(Normal(0.4, 2), 0.3, 0.7)
@@ -229,7 +226,7 @@ parshapes = valshape(prior)
 # Given the likelihood and prior definition, a `BAT.PosteriorDensity` is simply
 # defined via
 
-posterior = PosteriorDensity(likelihood, prior)
+posterior = PosteriorDensity(log_likelihood, prior)
 #md nothing # hide
 
 
@@ -238,25 +235,11 @@ posterior = PosteriorDensity(likelihood, prior)
 # We can now use Markov chain Monte Carlo (MCMC) to explore the space of
 # possible parameter values for the histogram fit.
 #
-# We'll use the Metropolis-Hastings algorithm and a multivariate
-# t-distribution (ν = 1) as it's proposal function:
+# To increase the verbosity level of BAT logging output, you may want to set
+# the Julia logging level for BAT to debug via `ENV["JULIA_DEBUG"] = "BAT"`.
 
-algorithm = MetropolisHastings(MvTDistProposalSpec(1.0))
-#md nothing # hide
-
-# We also need to which random number generator and seed to use. BAT requires
-# a counter-based RNG and partitions the RNG space over the MCMC chains. This
-# way, a single RNG seed is sufficient for all chains and results can be
-# reproducible even under parallel execution. Let's choose a Philox4x RNG
-# with a random seed:
-
-rngseed = BAT.Philox4xSeed()
-#md nothing # hide
-
-# The algorithm, posterior and RNG seed specify the MCMC chains:
-
-chainspec = MCMCSpec(algorithm, posterior, rngseed)
-#md nothing # hide
+#nb ENV["JULIA_DEBUG"] = "BAT"
+#jl ENV["JULIA_DEBUG"] = "BAT"
 
 # Let's use 4 MCMC chains and require 10^5 unique samples from each chain
 # (after tuning/burn-in):
@@ -265,89 +248,24 @@ nsamples = 10^4
 nchains = 4
 #md nothing # hide
 
-# BAT provides fine-grained control over the MCMC tuning algorithm,
-# convergence test and the chain initialization and tuning/burn-in strategy
-# (the values used here are the default values):
 
-tuner_config = ProposalCovTunerConfig(
-    λ = 0.5,
-    α = 0.15..0.35,
-    β = 1.5,
-    c = 1e-4..1e2
-)
+# Now we can generate a set of MCMC samples via [`bat_sample`](@ref):
 
-convergence_test = BGConvergence(
-    threshold = 1.1,
-    corrected = false
-)
-
-init_strategy = MCMCInitStrategy(
-    ninit_tries_per_chain = 8..128,
-    max_nsamples_pretune = 25,
-    max_nsteps_pretune = 250,
-    max_time_pretune = Inf
-)
-
-burnin_strategy = MCMCBurninStrategy(
-    max_nsamples_per_cycle = 1000,
-    max_nsteps_per_cycle = 10000,
-    max_time_per_cycle = Inf,
-    max_ncycles = 30
-)
-
+samples, stats = bat_sample(posterior, (nsamples, nchains), MetropolisHastings())
 #md nothing # hide
+#nb nothing # hide
 
-# To increase the verbosity level of BAT logging output, you may want to set
-# the Julia logging level for BAT to debug via `ENV["JULIA_DEBUG"] = "BAT"`.
-
-#nb ENV["JULIA_DEBUG"] = "BAT"
-#jl ENV["JULIA_DEBUG"] = "BAT"
-
-# Now we can generate a set of MCMC samples via `rand`:
-
-samples, sampleids, stats, chains = rand(
-    chainspec,
-    nsamples,
-    nchains,
-    tuner_config = tuner_config,
-    convergence_test = convergence_test,
-    init_strategy = init_strategy,
-    burnin_strategy = burnin_strategy,
-    max_nsteps = 10^5,
-    max_time = Inf,
-    granularity = 1
-)
-#md nothing # hide
-
-# Note: Reasonable default values are defined for all of the above. In many
-# use cases, a simple
-#
-# ```julia
-# samples, sampleids, stats, chains =
-#    rand(MCMCSpec(MetropolisHastings(), model), nsamples, nchains)`
-# ```
-#
-# may be sufficient.
-
-# Let's print some results:
+# Let's calculate some posterior statistics using the function
+# [`bat_stats`](@ref) and print the results:
 
 println("Truth: $true_par_values")
 println("Mode: $(stats.mode)")
-println("Mean: $(stats.param_stats.mean)")
-println("Covariance: $(stats.param_stats.cov)")
-
-# `stats` contains some statistics collected during MCMC sample generation,
-# e.g. the mean and covariance of the parameters and the mode. Equal values
-# for these statistics may of course be calculated afterwards, from the
-# samples:
-
-@assert vec(mean(samples.params, FrequencyWeights(samples.weight))) ≈ stats.param_stats.mean
-@assert vec(var(samples.params, FrequencyWeights(samples.weight))) ≈ diag(stats.param_stats.cov)
-@assert cov(samples.params, FrequencyWeights(samples.weight)) ≈ stats.param_stats.cov
+println("Mean: $(stats.mean)")
+println("Covariance: $(stats.cov)")
 
 # We can also, e.g., get the Pearson auto-correlation of the parameters:
 
-vec(cor(samples.params, FrequencyWeights(samples.weight)))
+cor(samples.params, FrequencyWeights(samples.weight))
 
 
 # ### Visualization of Results
@@ -379,7 +297,7 @@ plot(
     nbins = 50, xlabel = par_names[3], ylabel = par_names[5],
     title = "Marginalized Distribution for mu_1 and sigma"
 )
-plot!(stats, (3, 5))
+plot!(MCMCBasicStats(samples), (3, 5))
 #jl savefig("tutorial-param-pair.pdf")
 #md savefig("tutorial-param-pair.pdf")
 #md savefig("tutorial-param-pair.svg"); nothing # hide
@@ -402,20 +320,18 @@ plot(
 # ### Integration with Tables.jl
 
 # BAT.jl supports the [Tables.jl](https://github.com/JuliaData/Tables.jl)
-# interface. Using a tables implementation like
-# TypedTables.jl](http://blog.roames.com/TypedTables.jl/stable/),
-# the whole MCMC output (parameter vectors, weights, sample/chain numbers,
-# etc.) can easily can be combined into a single table:
+# interface. So we can also convert the vector of MCMC samples vecto a
+# table, e.g. using TypedTables.jl](http://blog.roames.com/TypedTables.jl/stable/):
 
 using TypedTables
 
-tbl = Table(samples, sampleids)
+tbl = Table(samples)
 
 
-# Using the parameter shapes, we can also generate a table with named
-# parameters instead:
+# Using the parameter shapes, we can generate a table with named parameters,
+# instead of flat real-valued parameter vectors:
 
-tbl_named = Table(parshapes.(samples), sampleids)
+tbl_named = parshapes.(samples)
 
 
 # We can now, e.g., find the sample with the maximum posterior value (i.e. the
@@ -447,3 +363,83 @@ plot!(-4:0.01:4, x -> fit_function(fit_par_values, x), label = "Best fit")
 #md savefig("tutorial-data-truth-bestfit.pdf")
 #md savefig("tutorial-data-truth-bestfit.svg"); nothing # hide
 #md # [![Data, True Model and Best Fit](tutorial-data-truth-bestfit.svg)](tutorial-data-truth-bestfit.pdf)
+
+
+# ## Fine-grained control
+#
+# BAT provides fine-grained control over the MCMC algorithm options, the
+# MCMC chain initialization, tuning/burn-in strategy and convergence testing.
+# All option value used in the following are the default values, any or all
+# may be omitted.
+
+# We'll sample using the The Metropolis-Hastings MCMC algorithm. By default,
+# BAT uses a multivariate t-distribution (ν = 1) as the proposal function:
+
+algorithm = MetropolisHastings(MvTDistProposal(1.0))
+#md nothing # hide
+
+# BAT requires a counter-based random number generator (RNG), since it
+# partitions the RNG space over the MCMC chains. This way, a single RNG seed
+# is sufficient for all chains and results are reproducible even under
+# parallel execution. By default, BAT uses a Philox4x RNG initialized with a
+# random seed drawn from the
+# [system entropy pool](https://docs.julialang.org/en/v1/stdlib/Random/index.html#Random.RandomDevice):
+
+using Random123
+rng = Philox4x()
+#md nothing # hide
+
+
+# Other default parameters are:
+
+tuning = AdaptiveMetropolisTuning(
+    λ = 0.5,
+    α = 0.15..0.35,
+    β = 1.5,
+    c = 1e-4..1e2
+)
+
+convergence = BrooksGelmanConvergence(
+    threshold = 1.1,
+    corrected = false
+)
+
+init = MCMCInitStrategy(
+    ninit_tries_per_chain = 8..128,
+    max_nsamples_pretune = 25,
+    max_nsteps_pretune = 250,
+    max_time_pretune = Inf
+)
+
+burnin = MCMCBurninStrategy(
+    max_nsamples_per_cycle = 1000,
+    max_nsteps_per_cycle = 10000,
+    max_time_per_cycle = Inf,
+    max_ncycles = 30
+)
+
+#md nothing # hide
+
+# To generate MCMC samples with explicit control over all options, use
+
+samples, stats = bat_sample(
+    rng, posterior, (nsamples, nchains), algorithm,
+    max_nsteps = 10 * nsamples,
+    max_time = Inf,
+    tuning = tuning,
+    init = init,
+    burnin = burnin,
+    convergence = convergence,
+    strict = false,
+    filter = true
+)
+#md nothing # hide
+#nb nothing # hide
+
+# However, in many use cases, simply using the default options via
+#
+# ```julia
+# samples, stats = bat_sample(posterior, (nsamples, nchains), MetropolisHastings())
+# ```
+#
+# will often be sufficient.
