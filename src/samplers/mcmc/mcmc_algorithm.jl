@@ -142,9 +142,9 @@ BAT.nsteps(chain::SomeMCMCIter)::Int
 
 BAT.nsamples(chain::SomeMCMCIter)::Int
 
-BAT.current_sample(chain::SomeMCMCIter)::PosteriorSample
+BAT.current_sample(chain::SomeMCMCIter)::DensitySample
 
-BAT.sample_type(chain::SomeMCMCIter)::Type{<:PosteriorSample}
+BAT.sample_type(chain::SomeMCMCIter)::Type{<:DensitySample}
 
 BAT.samples_available(chain::SomeMCMCIter, nonzero_weights::Bool = false)::Bool
 
@@ -165,7 +165,7 @@ algorithm(chain::MCMCIterator)
 getposterior(chain::MCMCIterator)
 rngseed(chain::MCMCIterator)
 nparams(chain::MCMCIterator)
-PosteriorSampleVector(chain::MCMCIterator)
+DensitySampleVector(chain::MCMCIterator)
 mcmc_iterate!(callback, chain::MCMCIterator, ...)
 mcmc_iterate!(callbacks, chains::AbstractVector{<:MCMCIterator}, ...)
 ```
@@ -205,7 +205,7 @@ rngseed(chain::MCMCIterator) = mcmc_spec(chain).rngseed
 
 nparams(chain::MCMCIterator) = nparams(getposterior(chain))
 
-PosteriorSampleVector(chain::MCMCIterator) = PosteriorSampleVector(sample_type(chain), nparams(chain))
+DensitySampleVector(chain::MCMCIterator) = DensitySampleVector(sample_type(chain), nparams(chain))
 
 
 
@@ -219,7 +219,7 @@ function mcmc_iterate!(
     max_nsteps::Int64 = Int64(1000),
     max_time::Float64 = Inf
 )
-    @debug "Starting iteration over MCMC chain $(chain.info.id)"
+    @debug "Starting iteration over MCMC chain $(chain.info.id), max_nsamples = $max_nsamples, max_nsteps = $max_nsteps, max_time = $max_time"
 
     cbfunc = Base.convert(AbstractMCMCCallback, callback)
 
@@ -234,6 +234,12 @@ function mcmc_iterate!(
     )
         mcmc_step!(cbfunc, chain)
     end
+
+    end_time = time()
+    elapsed_time = end_time - start_time
+
+    @debug "Finished iteration over MCMC chain $(chain.info.id), nsamples = $(nsamples(chain)), nsteps = $(nsteps(chain)), time = $(Float32(elapsed_time))"
+
     chain
 end
 
@@ -247,7 +253,7 @@ function mcmc_iterate!(
         @debug "No MCMC chain(s) to iterate over."
         return chains
     else
-        @debug "Starting iteration over $(length(chains)) MCMC chain(s)."
+        @debug "Starting iteration over $(length(chains)) MCMC chain(s)"
     end
 
     cbv = mcmc_callback_vector(callbacks, eachindex(chains))
