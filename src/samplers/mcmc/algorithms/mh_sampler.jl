@@ -1,40 +1,33 @@
 # This file is a part of BAT.jl, licensed under the MIT License (MIT).
 
 
-abstract type MHWeightingScheme{T<:Real} end
-export MHWeightingScheme
+"""
+    MetropolisHastings
 
-struct MetropolisWeights{T<:Real} <: MHWeightingScheme{T} end
-export MetropolisWeights
-MetropolisWeights() = MetropolisWeights{Int}()
-
-struct ARPWeights{T<:AbstractFloat} <: MHWeightingScheme{T} end
-export ARPWeights
-ARPWeights() = ARPWeights{Float64}()
-
-
-
+Metropolis-Hastings MCMC sampling algorithm.
+!!!!!
+"""
 struct MetropolisHastings{
     Q<:ProposalDistSpec,
     W<:Real,
-    WS<:MHWeightingScheme{W}
+    WS<:AbstractWeightingScheme{W}
 } <: MCMCAlgorithm
     proposalspec::Q
-    weighting_scheme::WS
+    weighting::WS
 
-    MetropolisHastings(proposalspec::Q,weighting_scheme::WS) where {
-        Q<:ProposalDistSpec, W<:Real, WS<:MHWeightingScheme{W}} =
-        new{Q,W,WS}(proposalspec, weighting_scheme)
+    MetropolisHastings(proposalspec::Q,weighting::WS) where {
+        Q<:ProposalDistSpec, W<:Real, WS<:AbstractWeightingScheme{W}} =
+        new{Q,W,WS}(proposalspec, weighting)
 end
 
 export MetropolisHastings
 
 
 MetropolisHastings(proposalspec::ProposalDistSpec = MvTDistProposal()) =
-    MetropolisHastings(proposalspec, MetropolisWeights())
+    MetropolisHastings(proposalspec, RepetitionWeighting())
 
-MetropolisHastings(weighting_scheme::MHWeightingScheme) =
-    MetropolisHastings(MvTDistProposal(), weighting_scheme)
+MetropolisHastings(weighting::AbstractWeightingScheme) =
+    MetropolisHastings(MvTDistProposal(), weighting)
 
 
 mcmc_compatible(::MetropolisHastings, ::AbstractProposalDist, ::NoParamBounds) = true
@@ -51,7 +44,7 @@ mutable struct MHIterator{
     SP<:MCMCSpec,
     R<:AbstractRNG,
     Q<:AbstractProposalDist,
-    SV<:PosteriorSampleVector
+    SV<:DensitySampleVector
 } <: MCMCIterator
     spec::SP
     rng::R
@@ -88,15 +81,15 @@ function MHIterator(
 
     # ToDo: Make numeric type configurable:
 
-    (log_prior_value, log_posterior_value) = eval_prior_posterior_logval_strict!(postr, params_vec)
+    log_posterior_value = apply_bounds_and_eval_posterior_logval_strict!(postr, params_vec)
 
     T = typeof(log_posterior_value)
     W = _sample_weight_type(typeof(alg))
 
     sample_info = MCMCSampleID(info.id, info.cycle, 1, CURRENT_SAMPLE)
-    current_sample = PosteriorSample(params_vec, log_posterior_value, convert(T, log_prior_value), one(W), sample_info)
+    current_sample = DensitySample(params_vec, log_posterior_value, one(W), sample_info, nothing)
 
-    samples = PosteriorSampleVector{P,T,W,MCMCSampleID}(undef, 0, npar)
+    samples = DensitySampleVector{P,T,W,MCMCSampleID,Nothing}(undef, 0, npar)
     push!(samples, current_sample)
 
     nsamples::Int64 = 0
@@ -254,15 +247,13 @@ function mcmc_step!(
         samples.weight[proposed] = 0
         proposal_rand!(rng, proposaldist, proposed_params, current_params)
 
-        current_log_posterior = samples.log_posterior[current]
+        current_log_posterior = samples.logdensity[current]
         T = typeof(current_log_posterior)
 
         # Evaluate prior and likelihood with proposed parameters:
-        proposed_log_prior, proposed_log_posterior =
-            eval_prior_posterior_logval!(T, pstr, proposed_params)
+        proposed_log_posterior = apply_bounds_and_eval_posterior_logval!(T, pstr, proposed_params)
 
-        samples.log_posterior[proposed] = proposed_log_posterior
-        samples.log_prior[proposed] = proposed_log_prior
+        samples.logdensity[proposed] = proposed_log_posterior
 
         p_accept = if proposed_log_posterior > -Inf
             # log of ratio of forward/reverse transition probability
@@ -299,8 +290,7 @@ function mcmc_step!(
 
         if accepted
             current_params .= proposed_params
-            samples.log_posterior[current] = samples.log_posterior[proposed]
-            samples.log_prior[current] = samples.log_prior[proposed]
+            samples.logdensity[current] = samples.logdensity[proposed]
             samples.weight[current] = samples.weight[proposed]
             samples.info[current] = samples.info[proposed]
         end
@@ -317,7 +307,7 @@ end
 
 
 function _mh_weights(
-    algorithm::MetropolisHastings{Q,W,<:MetropolisWeights},
+    algorithm::MetropolisHastings{Q,W,<:RepetitionWeighting},
     p_accept::Real,
     accepted::Bool
 ) where {Q,W}
@@ -330,7 +320,7 @@ end
 
 
 function _mh_weights(
-    algorithm::MetropolisHastings{Q,W,<:ARPWeights},
+    algorithm::MetropolisHastings{Q,W,<:ARPWeighting},
     p_accept::Real,
     accepted::Bool
 ) where {Q,W}

@@ -1,7 +1,7 @@
 # This file is a part of BAT.jl, licensed under the MIT License (MIT).
 
 
-"""
+@doc doc"""
     abstract type AbstractPosteriorDensity <: AbstractDensity end
 
 Abstract super-type for posterior probability densities.
@@ -10,38 +10,38 @@ abstract type AbstractPosteriorDensity <: AbstractDensity end
 export AbstractPosteriorDensity
 
 
-doc"""
+@doc doc"""
     getlikelihood(posterior::AbstractPosteriorDensity)::AbstractDensity
+
+*BAT-internal, not part of stable public API.*
 
 The likelihood density of `posterior`. The likelihood may or may not be
 normalized.
 """
 function getlikelihood end
-export getlikelihood
 
 
-doc"""
+@doc doc"""
     getprior(posterior::AbstractPosteriorDensity)::AbstractDensity
+
+*BAT-internal, not part of stable public API.*
 
 The prior density of `posterior`. The prior may or may not be normalized.
 """
 function getprior end
-export getprior
 
 
-@doc """
-    BAT.eval_prior_posterior_logval!(
+@doc doc"""
+    BAT.apply_bounds_and_eval_posterior_logval!(
         T::Type{<:Real},
         density::AbstractDensity,
         params::AbstractVector{<:Real}
     )
 
-First apply bounds to the parameters, compute prior and posterior log values
-by via `eval_density_logval`.
+*BAT-internal, not part of stable public API.*
 
-May modify `params`.
-
-Returns a `NamedTuple{(:log_prior, :log_posterior),Tuple{T,T}}`
+First apply bounds to the parameters, then compute and return posterior log
+value. May modify `params`.
 
 Guarantees that  :
 
@@ -52,9 +52,9 @@ Guarantees that  :
 
 In both cases, `T(-Inf)` is returned for both prior and posterior.
 """
-function eval_prior_posterior_logval! end
+function apply_bounds_and_eval_posterior_logval! end
 
-function eval_prior_posterior_logval!(
+function apply_bounds_and_eval_posterior_logval!(
     T::Type{<:Real},
     posterior::AbstractPosteriorDensity,
     params::AbstractVector{<:Real}
@@ -77,25 +77,20 @@ function eval_prior_posterior_logval!(
         zero_prob_logval
     end
 
-    posterior_logval = convert(T, prior_logval + likelihood_logval)
-
-    (log_prior = prior_logval, log_posterior = posterior_logval)
+    convert(T, prior_logval + likelihood_logval)
 end
 
 
-@doc """
-    BAT.eval_prior_posterior_logval_strict!(
-        density::AbstractDensity,
+@doc doc"""
+    BAT.apply_bounds_and_eval_posterior_logval_strict!(
+        posterior::AbstractPosteriorDensity,
         params::AbstractVector{<:Real}
     )
 
-First apply bounds to the parameters, compute prior and posterior log values
-by via `eval_density_logval`.
+*BAT-internal, not part of stable public API.*
 
-May modify `params`.
-
-Returns a `NamedTuple{(:log_prior, :log_posterior),Tuple{T,T}}`. T is
-inferred from value returned by `eval_density_logval` for the likelihood.
+First apply bounds to the parameters, then compute and return posterior log
+value. May modify `params`.
 
 Guarantees that  :
 
@@ -106,7 +101,7 @@ Guarantees that  :
 
 In both cases, an exception is thrown.
 """
-function eval_prior_posterior_logval_strict!(
+function apply_bounds_and_eval_posterior_logval_strict!(
     posterior::AbstractPosteriorDensity,
     params::AbstractVector{<:Real}
 )
@@ -129,9 +124,7 @@ function eval_prior_posterior_logval_strict!(
 
     T = typeof(likelihood_logval)
 
-    posterior_logval = convert(T, convert(T, prior_logval) + likelihood_logval)
-
-    (log_prior = prior_logval, log_posterior = posterior_logval)
+    convert(T, convert(T, prior_logval) + likelihood_logval)
 end
 
 
@@ -167,7 +160,7 @@ end
 
 
 
-doc"""
+@doc doc"""
     PosteriorDensity{
         Li<:AbstractDensity,
         Pr<:DistLikeDensity

@@ -2,14 +2,14 @@
 
 
 # BAT-internal:
-const MCMCOutputWithChains = Tuple{PosteriorSampleVector, MCMCBasicStats, AbstractVector{<:MCMCIterator}}
+const MCMCOutputWithChains = Tuple{DensitySampleVector, MCMCBasicStats, AbstractVector{<:MCMCIterator}}
 
 # BAT-internal:
 function MCMCOutputWithChains(chainspec::MCMCSpec)
     dummy_chain = chainspec(zero(Int64))
 
     (
-        PosteriorSampleVector(dummy_chain),
+        DensitySampleVector(dummy_chain),
         MCMCBasicStats(dummy_chain),
         Vector{typeof(dummy_chain)}()
     )
@@ -18,7 +18,7 @@ end
 
 
 # BAT-internal:
-const MCMCOutput = Tuple{PosteriorSampleVector, MCMCBasicStats}
+const MCMCOutput = Tuple{DensitySampleVector, MCMCBasicStats}
 
 # BAT-internal:
 function MCMCOutput(chainspec::MCMCSpec)
@@ -35,7 +35,7 @@ function mcmc_sample(
     nchains::Integer;
     max_nsteps::Int64 = Int64(10 * nsamples),
     max_time::Float64 = Inf,
-    tuner_config::AbstractMCMCTunerConfig = AbstractMCMCTunerConfig(chainspec.algorithm),
+    tuner_config::AbstractMCMCTuningStrategy = AbstractMCMCTuningStrategy(chainspec.algorithm),
     convergence_test::MCMCConvergenceTest = BrooksGelmanConvergence(),
     init_strategy::MCMCInitStrategy = MCMCInitStrategy(tuner_config),
     burnin_strategy::MCMCBurninStrategy = MCMCBurninStrategy(chainspec.algorithm, nsamples, max_nsteps, tuner_config),
@@ -88,7 +88,7 @@ function mcmc_sample!(
 )
     result_samples, result_stats = result
 
-    samples = PosteriorSampleVector.(chains)
+    samples = DensitySampleVector.(chains)
     stats = MCMCBasicStats.(chains)
 
     nonzero_weights = granularity <= 1
@@ -131,7 +131,7 @@ default_sampling_algorithm(posterior::AbstractPosteriorDensity) = MetropolisHast
         algorithm::MCMCAlgorithm;
         max_nsteps::Integer,
         max_time::Real,
-        tuning::AbstractMCMCTunerConfig,
+        tuning::AbstractMCMCTuningStrategy,
         init::MCMCInitStrategy,
         burnin::MCMCBurninStrategy,
         convergence::MCMCConvergenceTest,
@@ -154,7 +154,7 @@ function bat_sample(
     algorithm::MCMCAlgorithm;
     max_nsteps::Integer = 10 * n[1],
     max_time::Real = Inf,
-    tuning::AbstractMCMCTunerConfig = AbstractMCMCTunerConfig(algorithm),
+    tuning::AbstractMCMCTuningStrategy = AbstractMCMCTuningStrategy(algorithm),
     init::MCMCInitStrategy = MCMCInitStrategy(tuning),
     burnin::MCMCBurninStrategy = MCMCBurninStrategy(algorithm, n[1], max_nsteps, tuning),
     convergence::MCMCConvergenceTest = BrooksGelmanConvergence(),

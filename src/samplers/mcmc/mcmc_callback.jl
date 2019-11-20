@@ -1,8 +1,10 @@
 # This file is a part of BAT.jl, licensed under the MIT License (MIT).
 
 
-@doc """
+@doc doc"""
     AbstractMCMCCallback <: Function
+
+*BAT-internal, not part of stable public API.*
 
 Subtypes (e.g. `X`) must support
 
@@ -12,7 +14,7 @@ Subtypes (e.g. `X`) must support
 to be compabtible with `mcmc_iterate!`, `mcmc_tune_burnin!`, etc.
 """
 abstract type AbstractMCMCCallback <: Function end
-export AbstractMCMCCallback
+
 
 @inline Base.convert(::Type{AbstractMCMCCallback}, x::AbstractMCMCCallback) = x
 
@@ -35,8 +37,10 @@ mcmc_callback_vector(x::Tuple{}, idxs::AbstractVector{<:Integer}) =
 
 
 
-@doc """
+@doc doc"""
     MCMCCallbackWrapper{F} <: AbstractMCMCCallback
+
+*BAT-internal, not part of stable public API.*
 
 Wraps a callable object to turn it into an `AbstractMCMCCallback`.
 
@@ -96,8 +100,6 @@ struct MCMCAppendCallback{T,F<:Function} <: AbstractMCMCCallback
     nonzero_weights::Bool
 end
 
-export MCMCAppendCallback
-
 
 function (cb::MCMCAppendCallback)(level::Integer, subject::Any)
     if (level <= cb.max_level)
@@ -107,7 +109,7 @@ function (cb::MCMCAppendCallback)(level::Integer, subject::Any)
 end
 
 
-Base.convert(::Type{AbstractMCMCCallback}, x::PosteriorSampleVector) = MCMCAppendCallback(x)
+Base.convert(::Type{AbstractMCMCCallback}, x::DensitySampleVector) = MCMCAppendCallback(x)
 
-MCMCAppendCallback(x::PosteriorSampleVector, nonzero_weights::Bool = true) =
+MCMCAppendCallback(x::DensitySampleVector, nonzero_weights::Bool = true) =
     MCMCAppendCallback(x, 1, get_samples!, nonzero_weights)

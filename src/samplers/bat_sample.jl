@@ -14,7 +14,7 @@ const RandSampleable = Union{
 
 const AnyPosterior = Union{
     PosteriorDensity,
-    PosteriorSampleVector,
+    DensitySampleVector,
     RandSampleable,
 }
 
@@ -48,7 +48,7 @@ function default_sampling_algorithm end
         posterior::BAT.AnyPosterior,
         n::BAT.AnyNSamples,
         [algorithm::BAT.AbstractSamplingAlgorithm]
-    )::PosteriorSampleVector
+    )::DensitySampleVector
 
 Draw `n` samples from `posterior`.
 
@@ -56,7 +56,7 @@ Returns a NamedTuple of the shape
 
 ```julia
 (
-    samples = X::PosteriorSampleVector,...
+    samples = X::DensitySampleVector,...
     stats = s::@test stats isa NamedTuple{(:mode,:mean,:cov,...)},
     ...
 )
@@ -72,7 +72,7 @@ of the stable BAT API.
 
 * [`BAT.DistLikeDensity`](@ref)
 
-* [`BAT.PosteriorSampleVector`](@ref)
+* [`BAT.DensitySampleVector`](@ref)
 
 * `Distributions.MultivariateDistribution`
 
@@ -98,7 +98,7 @@ export bat_sample
     posterior::AnyPosterior, n::AnyNSamples;
     kwargs...
 )
-    rng = bat_default_rng()
+    rng = bat_rng()
     bat_sample(rng, posterior, n; kwargs...)
 end
 
@@ -107,7 +107,7 @@ end
     posterior::AnyPosterior, n::AnyNSamples, algorithm::AbstractSamplingAlgorithm;
     kwargs...
 )
-    rng = bat_default_rng()
+    rng = bat_rng()
     bat_sample(rng, posterior, n, algorithm; kwargs...)
 end
 
@@ -123,16 +123,17 @@ end
 
 
 """
-    BAT.RandSampling
+    RandSampling
 
 Constructors:
 
-    BAT.RandSampling()
+    RandSampling()
 
 Sample via `Random.rand`. Only supported for posteriors of type
 `Distributions.MultivariateDistribution` and `BAT.DistLikeDensity`.
 """
 struct RandSampling <: AbstractSamplingAlgorithm end
+export RandSampling
 
 
 default_sampling_algorithm(posterior::RandSampleable) = RandSampling()
@@ -140,13 +141,12 @@ default_sampling_algorithm(posterior::RandSampleable) = RandSampling()
 
 function bat_sample(rng::AbstractRNG, posterior::RandSampleable, n::Integer, algorithm::RandSampling)
     npar = length(posterior)
-    samples = PosteriorSampleVector{_default_PT,_default_LDT,_default_int_WT,Nothing}(undef, n, npar)
+    samples = DensitySampleVector{_default_PT,_default_LDT,_default_int_WT,Nothing,Nothing}(undef, n, npar)
 
     rand!(rng, sampler(posterior), flatview(samples.params))
-    let log_posterior = samples.log_posterior, params = samples.params
-        @uviews log_posterior .= logpdf.(Ref(posterior), params)
+    let logdensity = samples.logdensity, params = samples.params
+        @uviews logdensity .= logpdf.(Ref(posterior), params)
     end
-    samples.log_prior .= 0
     samples.weight .= 1
     
     stats = bat_stats(samples)
@@ -157,21 +157,22 @@ end
 
 
 """
-    BAT.RandomResampling
+    RandResampling <: AbstractSamplingAlgorithm
 
 Constructors:
 
-    BAT.RandomResampling()
+    RandResampling()
 
-Resample from a given set of samples.
+Resamples from a given set of samples.
 """
-struct RandomResampling <: AbstractSamplingAlgorithm end
+struct RandResampling <: AbstractSamplingAlgorithm end
+export RandResampling
 
 
-default_sampling_algorithm(posterior::PosteriorSampleVector) = RandomResampling()
+default_sampling_algorithm(posterior::DensitySampleVector) = RandResampling()
 
 
-function bat_sample(rng::AbstractRNG, posterior::PosteriorSampleVector, n::Integer, algorithm::RandomResampling)
+function bat_sample(rng::AbstractRNG, posterior::DensitySampleVector, n::Integer, algorithm::RandResampling)
     orig_idxs = eachindex(posterior)
     weights = FrequencyWeights(float(posterior.weight))
     resampled_idxs = sample(orig_idxs, weights, n, replace=true, ordered=false)
